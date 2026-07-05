@@ -300,6 +300,47 @@ function StagePill({ stage }) {
   );
 }
 
+function TableStageSelect({ app, onUpdate }) {
+  const stage = computeFunnelStage(app);
+  const c = STAGE_COLORS[stage] || STAGE_COLORS.Applied;
+  
+  return (
+    <div className="relative inline-block">
+      <select
+        value={app.applicationStatus}
+        onChange={(e) => {
+          const newStatus = e.target.value;
+          let newStage = app.currentStage;
+          if (newStatus === "Applied") newStage = "New";
+          else if (newStatus === "Screening" || newStatus === "Recruiter Screening") newStage = "Screening";
+          else if (newStatus === "Interviewing" || newStatus === "Next Round") newStage = "Interview Round 1";
+          else if (newStatus === "Offer Accepted" || newStatus === "Offer Extended" || newStatus === "Offer") newStage = "Offer";
+          else if (newStatus === "Rejected") newStage = "Rejected";
+          else if (newStatus === "Ghosted") newStage = "Ghosted";
+          else if (newStatus === "Withdrawn") newStage = "Closed";
+          
+          onUpdate({ 
+            ...app, 
+            applicationStatus: newStatus, 
+            currentStage: newStage,
+            autoRoleDomain: classifyDomain(app.jobTitle) 
+          });
+        }}
+        className={`pl-5 pr-6 py-0.5 rounded-full text-[11px] font-bold ${c.bg} ${c.text} border-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none text-left`}
+        style={{ backgroundImage: 'none' }}
+      >
+        {APPLICATION_STATUS_OPTIONS.map((opt) => (
+          <option key={opt} value={opt} className="bg-white text-slate-800 font-semibold">
+            {opt}
+          </option>
+        ))}
+      </select>
+      <span className={`absolute left-2 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full ${c.dot} pointer-events-none`} />
+      <ChevronDown className="h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none opacity-60" />
+    </div>
+  );
+}
+
 function PriorityPill({ priority }) {
   const c = PRIORITY_COLORS[priority] || PRIORITY_COLORS.Medium;
   return (
@@ -574,6 +615,27 @@ function ApplicationWizardForm({ initial, onSave, onCancel }) {
                 <datalist id="source-suggestions">
                   {SOURCE_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
                 </datalist>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Application Status</Label>
+                <Select options={APPLICATION_STATUS_OPTIONS} value={form.applicationStatus} onChange={(e) => {
+                  const newStatus = e;
+                  let newStage = form.currentStage;
+                  if (newStatus === "Applied") newStage = "New";
+                  else if (newStatus === "Screening" || newStatus === "Recruiter Screening") newStage = "Screening";
+                  else if (newStatus === "Interviewing" || newStatus === "Next Round") newStage = "Interview Round 1";
+                  else if (newStatus === "Offer Accepted" || newStatus === "Offer Extended" || newStatus === "Offer") newStage = "Offer";
+                  else if (newStatus === "Rejected") newStage = "Rejected";
+                  else if (newStatus === "Ghosted") newStage = "Ghosted";
+                  else if (newStatus === "Withdrawn") newStage = "Closed";
+                  setForm(f => ({ ...f, applicationStatus: newStatus, currentStage: newStage }));
+                }} />
+              </div>
+              <div>
+                <Label>Current Stage</Label>
+                <Select options={CURRENT_STAGE_OPTIONS} value={form.currentStage} onChange={set("currentStage")} />
               </div>
             </div>
             <div>
@@ -865,7 +927,9 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                         </span>
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{formatDate(a.appliedDate)}</td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><StagePill stage={stage} /></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <TableStageSelect app={a} onUpdate={onUpdate} />
+                      </td>
                       <td className="px-4 py-3.5 text-slate-600 truncate max-w-[110px]" title={a.contactName}>{a.contactName || "—"}</td>
                       <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap">{a.reachedOut ? "Yes" : "No"}</td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{a.contactResponse || "No Response"}</td>
