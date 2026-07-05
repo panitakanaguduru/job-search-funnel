@@ -1,0 +1,164 @@
+.experience-section {
+  padding: 2rem 0;
+}
+
+.experience-console {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  min-height: 400px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.exp-sidebar {
+  width: 250px;
+  background: rgba(0, 0, 0, 0.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+.exp-tab {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 1.5rem 1.5rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  border-left: 3px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.exp-tab:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.exp-tab.active {
+  background: rgba(157, 78, 221, 0.1);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.tab-company {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.3rem;
+}
+
+.exp-tab.active .tab-company {
+  color: var(--accent-cyan);
+}
+
+.tab-period {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.exp-content {
+  flex: 1;
+  padding: 3rem;
+  position: relative;
+}
+
+.exp-header-area {
+  margin-bottom: 1.5rem;
+}
+
+.exp-role {
+  font-size: 1.5rem;
+  color: var(--text-main);
+  margin-bottom: 0.3rem;
+}
+
+.exp-company-large {
+  font-size: 1.2rem;
+  color: var(--accent-purple);
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+}
+
+.exp-metrics {
+  display: flex;
+  gap: 0.8rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.metric-badge {
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  color: var(--accent-cyan);
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.exp-points {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.exp-points li {
+  position: relative;
+  padding-left: 1.8rem;
+  margin-bottom: 1.2rem;
+  color: #ccc;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  opacity: 0;
+  transform: translateX(20px);
+  animation-fill-mode: forwards;
+}
+
+.exp-points li::before {
+  content: '▹';
+  position: absolute;
+  left: 0;
+  color: var(--accent-purple);
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.animate-in {
+  animation: slideIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+@keyframes slideIn {
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .experience-console {
+    flex-direction: column;
+  }
+  .exp-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .exp-tab {
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    padding: 1rem;
+    white-space: nowrap;
+  }
+  .exp-tab.active {
+    border-left: none;
+    border-bottom: 3px solid var(--accent-cyan);
+  }
+  .exp-content {
+    padding: 1.5rem;
+  }
+}

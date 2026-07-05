@@ -1,0 +1,44 @@
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8rem;
+}
+
+header {
+  padding: 1.5rem 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+nav ul {
+  display: flex;
+  gap: 2.5rem;
+  list-style: none;
+}
+
+nav a {
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.3s ease;
+}
+
+nav a:hover {
+  color: #fff;
+}
+
+section {
+  scroll-margin-top: 100px;
+  animation: fadeIn 0.8s ease forwards;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    padding: 1.5rem;
+    gap: 5rem;
+  }
+}
