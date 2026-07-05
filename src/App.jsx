@@ -47,14 +47,14 @@ const DOMAIN_OPTIONS = [
 ];
 
 const APPLICATION_STATUS_OPTIONS = [
-  "Applied", "In Review", "Screening", "Interview Scheduled", "Interviewing",
-  "Final Round", "Offer Extended", "Offer Accepted", "Offer Declined",
+  "Applied", "In Review", "Screening", "Recruiter Screening", "Interview Scheduled", "Interviewing",
+  "Next Round", "Final Round", "Offer Extended", "Offer Accepted", "Offer Declined",
   "Rejected", "Ghosted", "Withdrawn",
 ];
 
 const CURRENT_STAGE_OPTIONS = [
-  "New", "Outreach Sent", "Awaiting Response", "Screening", "Interview Round 1",
-  "Interview Round 2+", "Final Round", "Reference Check", "Offer", "Rejected",
+  "New", "Outreach Sent", "Awaiting Response", "Recruiter Screening", "Screening", "Interview Round 1",
+  "Interview Round 2+", "Next Round", "Final Round", "Reference Check", "Offer", "Rejected",
   "Ghosted", "Closed",
 ];
 
@@ -124,11 +124,12 @@ function formatDate(dateStr) {
 
 function computeFunnelStage(app) {
   const status = (app.applicationStatus || "").toLowerCase();
-  if (status.includes("offer")) return "Offer";
-  if (status.includes("reject") || app.contactResponse === "Rejected") return "Rejected";
-  if (status.includes("withdraw")) return "Withdrawn";
-  if (status.includes("interview") || status.includes("final")) return "Interviewing";
-  if (status.includes("screen") || app.contactResponse === "Screen Scheduled") return "Screening";
+  const stage = (app.currentStage || "").toLowerCase();
+  if (status.includes("offer") || stage.includes("offer")) return "Offer";
+  if (status.includes("reject") || stage.includes("reject") || app.contactResponse === "Rejected") return "Rejected";
+  if (status.includes("withdraw") || stage.includes("closed")) return "Withdrawn";
+  if (status.includes("interview") || stage.includes("interview") || status.includes("final") || stage.includes("final") || status.includes("next") || stage.includes("next")) return "Interviewing";
+  if (status.includes("screen") || stage.includes("screen") || app.contactResponse === "Screen Scheduled") return "Screening";
   if (["Replied", "Asked to Apply", "Future Role"].includes(app.contactResponse)) return "Responded";
   if (app.reachedOut) {
     if (!app.contactResponse || app.contactResponse === "No Response") {
