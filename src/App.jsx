@@ -1023,7 +1023,14 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                   const stage = computeFunnelStage(a);
                   return (
                     <tr key={a.id} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-4 py-3.5 font-bold text-slate-900 whitespace-nowrap">{a.companyName || "—"}</td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="font-bold text-slate-900">{a.companyName || "—"}</div>
+                        {a.notes && (
+                          <div className="text-[10px] text-slate-400 font-normal truncate max-w-[155px] italic mt-0.5" title={a.notes}>
+                            {a.notes}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3.5 text-slate-700 whitespace-nowrap">{a.jobTitle || "—"}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1.5 text-slate-600">
