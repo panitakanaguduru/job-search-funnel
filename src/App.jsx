@@ -70,7 +70,7 @@ const FIELD_KEYS = [
   "appliedDate", "applicationStatus", "jobLink", "source", "resumeVersion",
   "contactName", "contactLinkedIn", "contactEmail", "reachedOut", "outreachDate",
   "outreachChannel", "contactResponse", "referralStatus", "currentStage",
-  "rejectionReason", "notes", "followUpDate", "priority",
+  "rejectionReason", "notes", "followUpDate", "priority", "rounds",
 ];
 
 const STORAGE_KEY = "jsfd_applications_v1";
@@ -238,6 +238,7 @@ function blankApp() {
     outreachDate: "", outreachChannel: "", contactResponse: "No Response",
     referralStatus: "No Referral", currentStage: "New", rejectionReason: "",
     notes: "", followUpDate: "", priority: "Medium", createdAt: Date.now(),
+    rounds: [],
   };
 }
 
@@ -246,6 +247,14 @@ function normalizeApp(raw) {
   const merged = { ...b, ...raw, id: raw.id || uid() };
   merged.reachedOut = merged.reachedOut === true || merged.reachedOut === "true" || merged.reachedOut === "Yes" || merged.reachedOut === "yes";
   merged.autoRoleDomain = classifyDomain(merged.jobTitle);
+  if (typeof merged.rounds === "string") {
+    try {
+      merged.rounds = JSON.parse(merged.rounds);
+    } catch (e) {
+      merged.rounds = [];
+    }
+  }
+  merged.rounds = Array.isArray(merged.rounds) ? merged.rounds : [];
   return merged;
 }
 
@@ -749,6 +758,102 @@ function ApplicationWizardForm({ initial, onSave, onCancel }) {
               <Label>Notes</Label>
               <TextArea rows={2} value={form.notes} onChange={(e) => set("notes")(e.target.value)} placeholder="Add comments, notes, or highlights..." />
             </div>
+
+            {/* Dynamic Interview Rounds Logger */}
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <Label>Interview Rounds ({form.rounds?.length || 0})</Label>
+                <Btn
+                  type="button"
+                  variant="accent"
+                  size="sm"
+                  onClick={() => {
+                    const newRound = {
+                      id: uid(),
+                      type: "Technical Interview",
+                      date: new Date().toISOString().slice(0, 10),
+                      status: "Scheduled",
+                      notes: ""
+                    };
+                    setForm(f => ({ ...f, rounds: [...(f.rounds || []), newRound] }));
+                  }}
+                >
+                  <Plus className="h-3 w-3" /> Add Round
+                </Btn>
+              </div>
+              {(!form.rounds || form.rounds.length === 0) ? (
+                <p className="text-[11px] text-slate-400 italic">No interview rounds added yet. Click Add Round to log recruiter calls, technical screens, or onsite rounds.</p>
+              ) : (
+                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                  {form.rounds.map((r, idx) => (
+                    <div key={r.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm(f => ({ ...f, rounds: f.rounds.filter(item => item.id !== r.id) }));
+                        }}
+                        className="absolute top-2.5 right-2.5 p-1 rounded hover:bg-rose-50 text-rose-500 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Round Type</label>
+                          <Select 
+                            options={["Recruiter Screen", "Phone Screen", "Coding Assessment", "Technical Screen", "System Design", "Hiring Manager", "Behavioral / Fit", "Onsite", "Other"]}
+                            value={r.type}
+                            onChange={(v) => {
+                              const updated = form.rounds.map(item => item.id === r.id ? { ...item, type: v } : item);
+                              setForm(f => ({ ...f, rounds: updated }));
+                            }}
+                            className="py-1 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Round Date</label>
+                          <Input 
+                            type="date"
+                            value={r.date}
+                            onChange={(e) => {
+                              const updated = form.rounds.map(item => item.id === r.id ? { ...item, date: e.target.value } : item);
+                              setForm(f => ({ ...f, rounds: updated }));
+                            }}
+                            className="py-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Status</label>
+                          <Select 
+                            options={["Scheduled", "Completed - Passed", "Completed - Failed", "Pending Feedback"]}
+                            value={r.status}
+                            onChange={(v) => {
+                              const updated = form.rounds.map(item => item.id === r.id ? { ...item, status: v } : item);
+                              setForm(f => ({ ...f, rounds: updated }));
+                            }}
+                            className="py-1 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Notes / Questions</label>
+                          <Input 
+                            value={r.notes}
+                            onChange={(e) => {
+                              const updated = form.rounds.map(item => item.id === r.id ? { ...item, notes: e.target.value } : item);
+                              setForm(f => ({ ...f, rounds: updated }));
+                            }}
+                            placeholder="Feedback, questions..."
+                            className="py-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -928,7 +1033,14 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{formatDate(a.appliedDate)}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        <TableStageSelect app={a} onUpdate={onUpdate} />
+                        <div className="space-y-1">
+                          <TableStageSelect app={a} onUpdate={onUpdate} />
+                          {a.rounds && a.rounds.length > 0 && (
+                            <div className="text-[9px] text-slate-400 font-bold block text-center">
+                              {a.rounds.length} round{a.rounds.length > 1 ? "s" : ""} done
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 truncate max-w-[110px]" title={a.contactName}>{a.contactName || "—"}</td>
                       <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap">{a.reachedOut ? "Yes" : "No"}</td>
@@ -1233,63 +1345,118 @@ function ContactsPage({ apps }) {
    ============================================================ */
 
 function InterviewsPage({ apps }) {
-  const interviews = useMemo(() => {
-    return apps
-      .filter((a) => {
-        const stage = computeFunnelStage(a);
-        return stage === "Interviewing" || stage === "Screening" || a.contactResponse === "Screen Scheduled";
-      })
-      .sort((a, b) => (a.followUpDate || "9999").localeCompare(b.followUpDate || "9999"));
+  // Collect all rounds from all apps
+  const allRounds = useMemo(() => {
+    const list = [];
+    apps.forEach((a) => {
+      if (a.rounds && Array.isArray(a.rounds)) {
+        a.rounds.forEach((r) => {
+          list.push({
+            ...r,
+            companyName: a.companyName,
+            jobTitle: a.jobTitle,
+            domain: effectiveDomain(a),
+            appId: a.id
+          });
+        });
+      }
+    });
+    return list;
   }, [apps]);
 
+  const scheduledRounds = useMemo(() => {
+    return allRounds
+      .filter((r) => r.status === "Scheduled")
+      .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  }, [allRounds]);
+
+  const completedRounds = useMemo(() => {
+    return allRounds
+      .filter((r) => r.status !== "Scheduled")
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }, [allRounds]);
+
+  const totalRoundsCount = allRounds.length;
+  const passedRoundsCount = allRounds.filter(r => r.status === "Completed - Passed").length;
+  const failedRoundsCount = allRounds.filter(r => r.status === "Completed - Failed").length;
+  const pendingRoundsCount = allRounds.filter(r => r.status === "Pending Feedback").length;
+
   return (
-    <div>
-      <SectionTitle eyebrow="Active Rounds" title="Upcoming Interviews" />
-      {interviews.length === 0 ? (
-        <Card><EmptyState icon={CalendarClock} title="No interviews scheduled" subtitle="Active screening and interview stages will show here automatically." /></Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {interviews.map((a) => (
-            <Card key={a.id} className="p-4 flex flex-col justify-between hover:border-indigo-100 transition-colors">
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div>
-                    <h3 className="font-extrabold text-slate-900 text-sm">{a.companyName}</h3>
-                    <p className="text-xs text-slate-500 font-semibold">{a.jobTitle}</p>
-                  </div>
-                  <StagePill stage={computeFunnelStage(a)} />
-                </div>
-                <div className="space-y-1.5 text-[11px] text-slate-600 mt-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-400 uppercase tracking-wider text-[9px]">Domain:</span>
-                    <span>{effectiveDomain(a)}</span>
-                  </div>
-                  {a.contactName && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-slate-400 uppercase tracking-wider text-[9px]">Contact:</span>
-                      <span>{a.contactName}</span>
+    <div className="space-y-6">
+      <SectionTitle eyebrow="Rounds Tracker" title="Interviews Ledger" />
+
+      {/* KPI mini row for rounds */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="p-3.5 text-center bg-indigo-50/10 border-indigo-100">
+          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total Rounds Logged</div>
+          <div className="text-xl font-black text-indigo-600 mt-1">{totalRoundsCount}</div>
+        </Card>
+        <Card className="p-3.5 text-center bg-emerald-50/10 border-emerald-100">
+          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rounds Passed</div>
+          <div className="text-xl font-black text-emerald-600 mt-1">{passedRoundsCount}</div>
+        </Card>
+        <Card className="p-3.5 text-center bg-rose-50/10 border-rose-100">
+          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Rounds Failed</div>
+          <div className="text-xl font-black text-rose-600 mt-1">{failedRoundsCount}</div>
+        </Card>
+        <Card className="p-3.5 text-center bg-purple-50/10 border-purple-100">
+          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-semibold">Pending Feedback</div>
+          <div className="text-xl font-black text-purple-600 mt-1">{pendingRoundsCount}</div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Upcoming Section */}
+        <Card className="p-5">
+          <SectionTitle title="Scheduled Interviews" />
+          {scheduledRounds.length === 0 ? (
+            <EmptyState icon={CalendarClock} title="No upcoming rounds scheduled" subtitle="Add scheduled rounds in Step 3 of the edit form to see them here." />
+          ) : (
+            <ul className="space-y-3">
+              {scheduledRounds.map((r, i) => (
+                <li key={r.id || i} className="p-3 bg-indigo-50/30 rounded-xl border border-indigo-100/50 flex flex-col justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">{r.companyName}</div>
+                      <div className="text-[11px] text-slate-500 font-medium">{r.jobTitle} · <span className="font-semibold text-indigo-600">{r.type}</span></div>
                     </div>
-                  )}
-                  {a.notes && (
-                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 mt-2 text-[11px] text-slate-500 leading-normal">
-                      {a.notes}
+                    <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">{r.status}</span>
+                  </div>
+                  {r.notes && <div className="text-[10px] text-slate-500 bg-white/70 p-2 rounded border border-slate-100 leading-normal">{r.notes}</div>}
+                  <div className="text-[10px] text-slate-400 font-semibold text-right">Date: {formatDate(r.date)}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* History Section */}
+        <Card className="p-5">
+          <SectionTitle title="Completed Rounds Ledger" />
+          {completedRounds.length === 0 ? (
+            <EmptyState icon={Inbox} title="No past rounds history" subtitle="Rounds marked completed, passed, or failed will populate here." />
+          ) : (
+            <ul className="space-y-3">
+              {completedRounds.map((r, i) => {
+                const statusColor = r.status === "Completed - Passed" ? "bg-emerald-50 text-emerald-700 border-emerald-100" : r.status === "Completed - Failed" ? "bg-rose-50 text-rose-700 border-rose-100" : "bg-purple-50 text-purple-700 border-purple-100";
+                return (
+                  <li key={r.id || i} className="p-3 bg-slate-50/50 rounded-xl border border-slate-100 flex flex-col justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{r.companyName}</div>
+                        <div className="text-[11px] text-slate-500 font-medium">{r.jobTitle} · <span className="font-semibold text-slate-700">{r.type}</span></div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusColor}`}>{r.status}</span>
                     </div>
-                  )}
-                </div>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between">
-                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">{a.currentStage}</span>
-                {a.followUpDate && (
-                  <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5 text-slate-400" />
-                    {formatDate(a.followUpDate)}
-                  </span>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+                    {r.notes && <div className="text-[10px] text-slate-500 bg-white/60 p-2 rounded border border-slate-100 leading-normal">{r.notes}</div>}
+                    <div className="text-[10px] text-slate-400 font-semibold text-right">Date: {formatDate(r.date)}</div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
