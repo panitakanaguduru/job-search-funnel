@@ -421,6 +421,38 @@ function TablePrioritySelect({ app, onUpdate }) {
   );
 }
 
+function TableNotesInput({ app, onUpdate }) {
+  const [val, setVal] = useState(app.notes || "");
+  
+  useEffect(() => {
+    setVal(app.notes || "");
+  }, [app.notes]);
+
+  const handleBlur = () => {
+    if (val !== (app.notes || "")) {
+      onUpdate({ ...app, notes: val });
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.target.blur();
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      placeholder="Click to add note..."
+      className="w-full bg-transparent hover:bg-slate-100/50 focus:bg-white border border-transparent focus:border-slate-200 focus:ring-1 focus:ring-indigo-500 rounded px-1.5 py-1 text-[11px] text-slate-600 placeholder-slate-300 font-normal transition-colors"
+    />
+  );
+}
+
 function Label({ children }) {
   return <label className="block text-xs font-semibold text-slate-700 mb-1.5">{children}</label>;
 }
@@ -1146,6 +1178,7 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                   <th className="px-4 py-3 font-semibold">Response</th>
                   <th className="px-4 py-3 font-semibold">Referral</th>
                   <th className="px-4 py-3 font-semibold">Priority</th>
+                  <th className="px-4 py-3 font-semibold">Notes</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1154,14 +1187,7 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                   const stage = computeFunnelStage(a);
                   return (
                     <tr key={a.id} className="hover:bg-slate-50/40 transition-colors">
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <div className="font-bold text-slate-900">{a.companyName || "—"}</div>
-                        {a.notes && (
-                          <div className="text-[10px] text-slate-400 font-normal truncate max-w-[155px] italic mt-0.5" title={a.notes}>
-                            {a.notes}
-                          </div>
-                        )}
-                      </td>
+                      <td className="px-4 py-3.5 font-bold text-slate-900 whitespace-nowrap">{a.companyName || "—"}</td>
                       <td className="px-4 py-3.5 text-slate-700 whitespace-nowrap">{a.jobTitle || "—"}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1.5 text-slate-600">
@@ -1208,6 +1234,9 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{a.referralStatus || "No Referral"}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap"><TablePrioritySelect app={a} onUpdate={onUpdate} /></td>
+                      <td className="px-4 py-3.5 min-w-[180px] max-w-[240px]">
+                        <TableNotesInput app={a} onUpdate={onUpdate} />
+                      </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openEdit(a)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer">
