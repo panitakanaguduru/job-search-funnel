@@ -745,6 +745,10 @@ function ApplicationWizardForm({ initial, onSave, onCancel }) {
               <Label>Job Link</Label>
               <Input value={form.jobLink} onChange={(e) => set("jobLink")(e.target.value)} placeholder="https://..." />
             </div>
+            <div>
+              <Label>Notes</Label>
+              <TextArea rows={2} value={form.notes} onChange={(e) => set("notes")(e.target.value)} placeholder="Add comments, notes, or highlights..." />
+            </div>
           </div>
         )}
 
