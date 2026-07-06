@@ -1751,6 +1751,7 @@ function RejectionsPage({ apps }) {
    ============================================================ */
 
 function AnalyticsPage({ apps }) {
+  const [timeScale, setTimeScale] = useState("daily");
   const stageData = useMemo(() => {
     const stages = ["Applied", "Reached Out", "Responded", "Screening", "Interviewing", "Offer", "Rejected", "Ghosted", "Withdrawn"];
     const counts = {};
@@ -1792,20 +1793,36 @@ function AnalyticsPage({ apps }) {
   }, [apps]);
 
   const historyData = useMemo(() => {
-    const monthly = {};
+    const groups = {};
     apps.forEach((a) => {
       if (!a.appliedDate) return;
       const d = new Date(a.appliedDate + "T00:00:00");
       if (isNaN(d.getTime())) return;
-      const key = d.toLocaleString("default", { month: "short", year: "numeric" });
-      const order = d.getFullYear() * 12 + d.getMonth();
-      if (!monthly[key]) {
-        monthly[key] = { name: key, Applications: 0, order };
+      
+      let key = "";
+      let order = 0;
+      
+      if (timeScale === "daily") {
+        key = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        order = d.getTime();
+      } else if (timeScale === "weekly") {
+        const day = d.getDay();
+        const sunday = new Date(d);
+        sunday.setDate(d.getDate() - day);
+        key = "Wk of " + sunday.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        order = sunday.getTime();
+      } else {
+        key = d.toLocaleString("default", { month: "short", year: "numeric" });
+        order = d.getFullYear() * 12 + d.getMonth();
       }
-      monthly[key].Applications += 1;
+      
+      if (!groups[key]) {
+        groups[key] = { name: key, Applications: 0, order };
+      }
+      groups[key].Applications += 1;
     });
-    return Object.values(monthly).sort((a, b) => a.order - b.order);
-  }, [apps]);
+    return Object.values(groups).sort((a, b) => a.order - b.order);
+  }, [apps, timeScale]);
 
   if (apps.length === 0) {
     return (
@@ -1826,7 +1843,25 @@ function AnalyticsPage({ apps }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Timeline Chart */}
         <Card className="p-5">
-          <SectionTitle title="Application Timeline" />
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-4">
+            <h3 className="font-extrabold text-slate-900 text-sm">Application Timeline</h3>
+            <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+              {["daily", "weekly", "monthly"].map((scale) => (
+                <button
+                  key={scale}
+                  type="button"
+                  onClick={() => setTimeScale(scale)}
+                  className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all duration-200 ${
+                    timeScale === scale 
+                      ? "bg-white text-indigo-600 shadow-sm" 
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {scale.charAt(0).toUpperCase() + scale.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ height: 260 }}>
             {historyData.length === 0 ? (
               <EmptyState title="No chronological data" subtitle="Timelines will fill out as you record applications." />
