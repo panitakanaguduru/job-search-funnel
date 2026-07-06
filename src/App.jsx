@@ -61,16 +61,15 @@ const CURRENT_STAGE_OPTIONS = [
 const OUTREACH_CHANNELS = ["LinkedIn", "Email", "Referral", "Other"];
 const CONTACT_RESPONSE_OPTIONS = ["No Response", "Replied", "Screen Scheduled", "Rejected", "Asked to Apply", "Future Role"];
 const REFERRAL_STATUS_OPTIONS = ["No Referral", "Requested", "Received Before Applying", "Received After Applying", "Confirmed", "Rejected"];
-const PRIORITY_OPTIONS = ["High", "Medium", "Low"];
+const PRIORITY_OPTIONS = ["High", "Normal"];
 const REJECTION_REASON_OPTIONS = ["Not Specified", "Position Filled", "More Experienced Candidate", "Skills Mismatch", "Salary Mismatch", "Location / Visa", "Role Cancelled", "Poor Interview Performance", "Culture Fit", "Other"];
 const SOURCE_SUGGESTIONS = ["LinkedIn", "Company Website", "Indeed", "Referral", "Glassdoor", "Wellfound", "Recruiter Outreach", "Career Fair", "Other"];
 
 const FIELD_KEYS = [
   "companyName", "emailUsed", "jobTitle", "autoRoleDomain", "manualRoleDomainOverride",
   "appliedDate", "applicationStatus", "jobLink", "source", "resumeVersion",
-  "contactName", "contactLinkedIn", "contactEmail", "reachedOut", "outreachDate",
-  "outreachChannel", "contactResponse", "referralStatus", "currentStage",
-  "rejectionReason", "notes", "followUpDate", "priority", "rounds",
+  "referralStatus", "currentStage",
+  "rejectionReason", "notes", "followUpDate", "priority", "rounds", "recruiters",
 ];
 
 const STORAGE_KEY = "jsfd_applications_v1";
@@ -125,20 +124,32 @@ function formatDate(dateStr) {
 function computeFunnelStage(app) {
   const status = (app.applicationStatus || "").toLowerCase();
   const stage = (app.currentStage || "").toLowerCase();
+  
   if (status.includes("offer") || stage.includes("offer")) return "Offer";
-  if (status.includes("reject") || stage.includes("reject") || app.contactResponse === "Rejected") return "Rejected";
+  if (status.includes("reject") || stage.includes("reject")) return "Rejected";
   if (status.includes("withdraw") || stage.includes("closed")) return "Withdrawn";
   if (status.includes("interview") || stage.includes("interview") || status.includes("final") || stage.includes("final") || status.includes("next") || stage.includes("next")) return "Interviewing";
-  if (status.includes("screen") || stage.includes("screen") || app.contactResponse === "Screen Scheduled") return "Screening";
-  if (["Replied", "Asked to Apply", "Future Role"].includes(app.contactResponse)) return "Responded";
-  if (app.reachedOut) {
-    if (!app.contactResponse || app.contactResponse === "No Response") {
-      const d = daysSince(app.outreachDate);
-      if (d !== null && d > 21) return "Ghosted";
+  
+  const responses = app.recruiters && app.recruiters.length > 0
+    ? app.recruiters.map(r => r.contactResponse || "No Response")
+    : [app.contactResponse || "No Response"];
+    
+  if (status.includes("screen") || stage.includes("screen") || responses.includes("Screen Scheduled")) return "Screening";
+  if (responses.some(r => ["Replied", "Asked to Apply", "Future Role"].includes(r))) return "Responded";
+  
+  const outreachDates = app.recruiters && app.recruiters.length > 0
+    ? app.recruiters.map(r => r.outreachDate).filter(Boolean)
+    : [app.outreachDate].filter(Boolean);
+    
+  if (outreachDates.length > 0) {
+    const allNoResponse = responses.every(r => r === "No Response");
+    if (allNoResponse) {
+      const maxDays = Math.max(...outreachDates.map(d => daysSince(d) || 0));
+      if (maxDays > 21) return "Ghosted";
     }
-    return "Reached Out";
   }
-  return "Applied";
+  
+  return "Reached Out";
 }
 
 const STAGE_COLORS = {
@@ -155,8 +166,7 @@ const STAGE_COLORS = {
 
 const PRIORITY_COLORS = {
   High: "bg-rose-50 text-rose-700 ring-1 ring-rose-200/50",
-  Medium: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/50",
-  Low: "bg-slate-50 text-slate-600 ring-1 ring-slate-200/50",
+  Normal: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/50",
 };
 
 const DOMAIN_SWATCH = {
@@ -234,19 +244,25 @@ function blankApp() {
     companyName: "", emailUsed: "", jobTitle: "", autoRoleDomain: "Unclassified",
     manualRoleDomainOverride: "", appliedDate: new Date().toISOString().slice(0, 10),
     applicationStatus: "Applied", jobLink: "", source: "", resumeVersion: "",
-    contactName: "", contactLinkedIn: "", contactEmail: "", reachedOut: false,
+    contactName: "", contactLinkedIn: "", contactEmail: "", reachedOut: true,
     outreachDate: "", outreachChannel: "", contactResponse: "No Response",
     referralStatus: "No Referral", currentStage: "New", rejectionReason: "",
-    notes: "", followUpDate: "", priority: "Medium", createdAt: Date.now(),
+    notes: "", followUpDate: "", priority: "Normal", createdAt: Date.now(),
     rounds: [],
+    recruiters: [],
   };
 }
 
 function normalizeApp(raw) {
   const b = blankApp();
   const merged = { ...b, ...raw, id: raw.id || uid() };
-  merged.reachedOut = merged.reachedOut === true || merged.reachedOut === "true" || merged.reachedOut === "Yes" || merged.reachedOut === "yes";
+  merged.reachedOut = true;
   merged.autoRoleDomain = classifyDomain(merged.jobTitle);
+  
+  if (merged.priority === "Medium" || merged.priority === "Low") {
+    merged.priority = "Normal";
+  }
+  
   if (typeof merged.rounds === "string") {
     try {
       merged.rounds = JSON.parse(merged.rounds);
@@ -255,6 +271,27 @@ function normalizeApp(raw) {
     }
   }
   merged.rounds = Array.isArray(merged.rounds) ? merged.rounds : [];
+
+  if (typeof merged.recruiters === "string") {
+    try {
+      merged.recruiters = JSON.parse(merged.recruiters);
+    } catch (e) {
+      merged.recruiters = [];
+    }
+  }
+  merged.recruiters = Array.isArray(merged.recruiters) ? merged.recruiters : [];
+
+  if (merged.recruiters.length === 0 && (raw.contactName || raw.contactEmail || raw.contactLinkedIn)) {
+    merged.recruiters = [{
+      id: uid(),
+      name: raw.contactName || "",
+      email: raw.contactEmail || "",
+      linkedin: raw.contactLinkedIn || "",
+      outreachDate: raw.outreachDate || raw.appliedDate || new Date().toISOString().slice(0, 10),
+      outreachChannel: raw.outreachChannel || "Other",
+      contactResponse: raw.contactResponse || "No Response"
+    }];
+  }
   return merged;
 }
 
@@ -351,7 +388,7 @@ function TableStageSelect({ app, onUpdate }) {
 }
 
 function PriorityPill({ priority }) {
-  const c = PRIORITY_COLORS[priority] || PRIORITY_COLORS.Medium;
+  const c = PRIORITY_COLORS[priority] || PRIORITY_COLORS.Normal;
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${c}`}>
       {priority}
@@ -656,60 +693,133 @@ function ApplicationWizardForm({ initial, onSave, onCancel }) {
 
         {currentStep === 2 && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Recruiter Name</Label>
-                <Input value={form.contactName} onChange={(e) => set("contactName")(e.target.value)} placeholder="e.g. Jamie Chen" />
-              </div>
-              <div>
-                <Label>Contact Email</Label>
-                <Input type="email" value={form.contactEmail} onChange={(e) => set("contactEmail")(e.target.value)} placeholder="recruiter@company.com" />
-              </div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <Label>Recruiters & Contacts ({form.recruiters?.length || 0})</Label>
+              <Btn
+                type="button"
+                variant="accent"
+                size="sm"
+                onClick={() => {
+                  const newRecruiter = {
+                    id: uid(),
+                    name: "",
+                    email: "",
+                    linkedin: "",
+                    outreachDate: new Date().toISOString().slice(0, 10),
+                    outreachChannel: "LinkedIn",
+                    contactResponse: "No Response"
+                  };
+                  setForm(f => ({ ...f, recruiters: [...(f.recruiters || []), newRecruiter] }));
+                }}
+              >
+                <Plus className="h-3 w-3" /> Add Recruiter
+              </Btn>
             </div>
-            <div>
-              <Label>Contact LinkedIn</Label>
-              <Input value={form.contactLinkedIn} onChange={(e) => set("contactLinkedIn")(e.target.value)} placeholder="linkedin.com/in/..." />
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
-              <div className="space-y-0.5">
-                <div className="text-xs font-semibold text-slate-700">Outreach Initiated</div>
-                <div className="text-[10px] text-slate-400">Toggle if you've already contacted a recruiter/employee.</div>
+            
+            {(!form.recruiters || form.recruiters.length === 0) ? (
+              <p className="text-[11px] text-slate-400 italic">No recruiters logged yet. Click 'Add Recruiter' to start tracking contacts you reached out to.</p>
+            ) : (
+              <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+                {form.recruiters.map((r, idx) => (
+                  <div key={r.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2.5 relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(f => ({ ...f, recruiters: f.recruiters.filter(item => item.id !== r.id) }));
+                      }}
+                      className="absolute top-2.5 right-2.5 p-1 rounded hover:bg-rose-50 text-rose-500 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                    
+                    <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Recruiter #{idx + 1}</div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <div>
+                        <Label>Name</Label>
+                        <Input 
+                          value={r.name}
+                          onChange={(e) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, name: e.target.value } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          placeholder="Jamie Chen"
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label>Email</Label>
+                        <Input 
+                          type="email"
+                          value={r.email}
+                          onChange={(e) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, email: e.target.value } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          placeholder="recruiter@company.com"
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label>LinkedIn</Label>
+                        <Input 
+                          value={r.linkedin}
+                          onChange={(e) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, linkedin: e.target.value } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          placeholder="linkedin.com/in/..."
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <div>
+                        <Label>Outreach Date</Label>
+                        <Input 
+                          type="date"
+                          value={r.outreachDate}
+                          onChange={(e) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, outreachDate: e.target.value } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label>Outreach Channel</Label>
+                        <Select 
+                          options={OUTREACH_CHANNELS}
+                          value={r.outreachChannel}
+                          onChange={(v) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, outreachChannel: v } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          allowEmpty
+                          emptyLabel="Select channel"
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label>Response</Label>
+                        <Select 
+                          options={CONTACT_RESPONSE_OPTIONS}
+                          value={r.contactResponse}
+                          onChange={(v) => {
+                            const updated = form.recruiters.map(item => item.id === r.id ? { ...item, contactResponse: v } : item);
+                            setForm(f => ({ ...f, recruiters: updated }));
+                          }}
+                          className="py-1 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <Toggle checked={form.reachedOut} onChange={set("reachedOut")} />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Outreach Date</Label>
-                <Input 
-                  type="date" 
-                  value={form.outreachDate} 
-                  onChange={(e) => set("outreachDate")(e.target.value)} 
-                  disabled={!form.reachedOut} 
-                  className="disabled:bg-slate-100 disabled:text-slate-400"
-                />
-              </div>
-              <div>
-                <Label>Outreach Channel</Label>
-                <Select 
-                  options={OUTREACH_CHANNELS} 
-                  value={form.outreachChannel} 
-                  onChange={set("outreachChannel")} 
-                  allowEmpty 
-                  emptyLabel="Select channel"
-                  className={!form.reachedOut ? "opacity-60 pointer-events-none bg-slate-50" : ""}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Contact Response</Label>
-                <Select 
-                  options={CONTACT_RESPONSE_OPTIONS} 
-                  value={form.contactResponse} 
-                  onChange={set("contactResponse")}
-                  className={!form.reachedOut ? "opacity-60 pointer-events-none bg-slate-50" : ""}
-                />
-              </div>
+            )}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div>
                 <Label>Referral Status</Label>
                 <Select options={REFERRAL_STATUS_OPTIONS} value={form.referralStatus} onChange={set("referralStatus")} />
@@ -898,7 +1008,6 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
   // Custom Filter State
   const [domainFilter, setDomainFilter] = useState("");
   const [stageFilter, setStageFilter] = useState("");
-  const [reachedOutFilter, setReachedOutFilter] = useState("");
   const [responseFilter, setResponseFilter] = useState("");
   const [referralFilter, setReferralFilter] = useState("");
   
@@ -908,16 +1017,19 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
     return apps
       .filter((a) => {
         const q = search.toLowerCase();
-        const matchesSearch = !q || [a.companyName, a.jobTitle, a.contactName].some((v) => (v || "").toLowerCase().includes(q));
+        const matchesSearch = !q || [
+          a.companyName, 
+          a.jobTitle, 
+          ...(a.recruiters?.map(r => r.name) || [])
+        ].some((v) => (v || "").toLowerCase().includes(q));
         const matchesDomain = !domainFilter || effectiveDomain(a) === domainFilter;
         const matchesStage = !stageFilter || computeFunnelStage(a) === stageFilter;
-        const matchesReachedOut = !reachedOutFilter || (reachedOutFilter === "Yes" ? a.reachedOut === true : a.reachedOut === false);
-        const matchesResponse = !responseFilter || a.contactResponse === responseFilter;
+        const matchesResponse = !responseFilter || (a.recruiters && a.recruiters.some(r => r.contactResponse === responseFilter));
         const matchesReferral = !referralFilter || a.referralStatus === referralFilter;
-        return matchesSearch && matchesDomain && matchesStage && matchesReachedOut && matchesResponse && matchesReferral;
+        return matchesSearch && matchesDomain && matchesStage && matchesResponse && matchesReferral;
       })
       .sort((a, b) => (b.appliedDate || "").localeCompare(a.appliedDate || ""));
-  }, [apps, search, domainFilter, stageFilter, reachedOutFilter, responseFilter, referralFilter]);
+  }, [apps, search, domainFilter, stageFilter, responseFilter, referralFilter]);
 
   function openAdd() { setEditing(blankApp()); setModalOpen(true); }
   function openEdit(app) { setEditing(app); setModalOpen(true); }
@@ -928,13 +1040,12 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
     setModalOpen(false);
   }
 
-  const hasActiveFilters = search || domainFilter || stageFilter || reachedOutFilter || responseFilter || referralFilter;
+  const hasActiveFilters = search || domainFilter || stageFilter || responseFilter || referralFilter;
   
   const clearFilters = () => {
     setSearch("");
     setDomainFilter("");
     setStageFilter("");
-    setReachedOutFilter("");
     setResponseFilter("");
     setReferralFilter("");
   };
@@ -961,7 +1072,7 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <Label>Domain</Label>
             <Select options={DOMAIN_OPTIONS} value={domainFilter} onChange={setDomainFilter} allowEmpty emptyLabel="All Domains" />
@@ -975,10 +1086,6 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
               allowEmpty 
               emptyLabel="All Stages" 
             />
-          </div>
-          <div>
-            <Label>Reached Out</Label>
-            <Select options={["Yes", "No"]} value={reachedOutFilter} onChange={setReachedOutFilter} allowEmpty emptyLabel="All Statuses" />
           </div>
           <div>
             <Label>Response</Label>
@@ -1010,8 +1117,7 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                   <th className="px-4 py-3 font-semibold">Domain</th>
                   <th className="px-4 py-3 font-semibold">Applied Date</th>
                   <th className="px-4 py-3 font-semibold">Stage</th>
-                  <th className="px-4 py-3 font-semibold">Recruiter</th>
-                  <th className="px-4 py-3 font-semibold">Reached Out</th>
+                  <th className="px-4 py-3 font-semibold">Recruiter(s)</th>
                   <th className="px-4 py-3 font-semibold">Response</th>
                   <th className="px-4 py-3 font-semibold">Referral</th>
                   <th className="px-4 py-3 font-semibold">Priority</th>
@@ -1049,9 +1155,32 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-slate-600 truncate max-w-[110px]" title={a.contactName}>{a.contactName || "—"}</td>
-                      <td className="px-4 py-3.5 text-slate-500 whitespace-nowrap">{a.reachedOut ? "Yes" : "No"}</td>
-                      <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{a.contactResponse || "No Response"}</td>
+                      <td className="px-4 py-3.5 text-slate-600 truncate max-w-[110px]" title={a.recruiters?.map(r => r.name).filter(Boolean).join(", ") || "—"}>
+                        {a.recruiters && a.recruiters.length > 0 ? (
+                          <span>
+                            {a.recruiters[0].name || "Unnamed"}
+                            {a.recruiters.length > 1 && ` (+${a.recruiters.length - 1})`}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
+                        {a.recruiters && a.recruiters.length > 0 ? (
+                          <span className="font-semibold">
+                            {a.recruiters.map(r => r.contactResponse || "No Response").includes("Screen Scheduled")
+                              ? "Screen Scheduled"
+                              : a.recruiters.map(r => r.contactResponse || "No Response").some(resp => ["Replied", "Asked to Apply", "Future Role"].includes(resp))
+                                ? "Replied / Active"
+                                : a.recruiters.map(r => r.contactResponse || "No Response").every(resp => resp === "Rejected")
+                                  ? "Rejected"
+                                  : "No Response"
+                            }
+                          </span>
+                        ) : (
+                          "No Response"
+                        )}
+                      </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{a.referralStatus || "No Referral"}</td>
                       <td className="px-4 py-3.5 whitespace-nowrap"><PriorityPill priority={a.priority} /></td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
@@ -1110,8 +1239,11 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
 function DashboardPage({ apps, setPage }) {
   const stats = useMemo(() => {
     const total = apps.length;
-    const reachedOut = apps.filter((a) => a.reachedOut).length;
-    const responded = apps.filter((a) => a.contactResponse && a.contactResponse !== "No Response").length;
+    const reachedOut = total;
+    const responded = apps.filter((a) => {
+      const recs = a.recruiters || [];
+      return recs.some(r => r.contactResponse && r.contactResponse !== "No Response");
+    }).length;
     const stageCounts = {};
     apps.forEach((a) => {
       const s = computeFunnelStage(a);
@@ -1279,20 +1411,25 @@ function ContactsPage({ apps }) {
   const contacts = useMemo(() => {
     const map = {};
     apps.forEach((a) => {
-      if (!a.contactName && !a.contactEmail) return;
-      const key = (a.contactEmail || a.contactName || "").toLowerCase() + "|" + (a.companyName || "").toLowerCase();
-      if (!map[key]) {
-        map[key] = {
-          name: a.contactName || "Unnamed contact",
-          email: a.contactEmail,
-          linkedin: a.contactLinkedIn,
-          company: a.companyName,
-          channel: a.outreachChannel,
-          response: a.contactResponse,
-          apps: [],
-        };
-      }
-      map[key].apps.push(a);
+      const recs = a.recruiters && Array.isArray(a.recruiters) ? a.recruiters : [];
+      recs.forEach((r) => {
+        if (!r.name && !r.email) return;
+        const key = (r.email || r.name || "").toLowerCase() + "|" + (a.companyName || "").toLowerCase();
+        if (!map[key]) {
+          map[key] = {
+            name: r.name || "Unnamed contact",
+            email: r.email,
+            linkedin: r.linkedin,
+            company: a.companyName,
+            channel: r.outreachChannel,
+            response: r.contactResponse,
+            apps: [],
+          };
+        }
+        if (!map[key].apps.some(x => x.id === a.id)) {
+          map[key].apps.push(a);
+        }
+      });
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [apps]);
@@ -1581,7 +1718,9 @@ function AnalyticsPage({ apps }) {
         stats[src] = { name: src, Total: 0, Responded: 0 };
       }
       stats[src].Total += 1;
-      if (a.contactResponse && a.contactResponse !== "No Response") {
+      const recs = a.recruiters || [];
+      const hasResponse = recs.some(r => r.contactResponse && r.contactResponse !== "No Response");
+      if (hasResponse) {
         stats[src].Responded += 1;
       }
     });
