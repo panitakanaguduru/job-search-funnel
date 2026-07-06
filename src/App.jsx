@@ -396,6 +396,31 @@ function PriorityPill({ priority }) {
   );
 }
 
+function TablePrioritySelect({ app, onUpdate }) {
+  const p = app.priority || "Normal";
+  const c = PRIORITY_COLORS[p] || PRIORITY_COLORS.Normal;
+  
+  return (
+    <div className="relative inline-block">
+      <select
+        value={p}
+        onChange={(e) => {
+          onUpdate({ ...app, priority: e.target.value });
+        }}
+        className={`pl-3.5 pr-6 py-0.5 rounded-full text-[11px] font-bold ${c} border-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none text-left`}
+        style={{ backgroundImage: 'none' }}
+      >
+        {PRIORITY_OPTIONS.map((opt) => (
+          <option key={opt} value={opt} className="bg-white text-slate-800 font-semibold">
+            {opt}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none opacity-60" />
+    </div>
+  );
+}
+
 function Label({ children }) {
   return <label className="block text-xs font-semibold text-slate-700 mb-1.5">{children}</label>;
 }
@@ -1182,7 +1207,7 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
                         )}
                       </td>
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">{a.referralStatus || "No Referral"}</td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><PriorityPill priority={a.priority} /></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><TablePrioritySelect app={a} onUpdate={onUpdate} /></td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openEdit(a)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer">
