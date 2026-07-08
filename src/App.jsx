@@ -2130,6 +2130,8 @@ function Sidebar({ page, setPage, mobileOpen, setMobileOpen, totalApps }) {
    MAIN APPLICATION CONTAINER & SIDEBAR WRAPPER
    ============================================================ */
 
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
 export default function App() {
   const [apps, setApps] = useState([]);
   const [loadingApps, setLoadingApps] = useState(true);
@@ -2139,10 +2141,13 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const expectBackend = isLocalhost || API_BASE !== "";
+
     async function loadData() {
       try {
         setLoadingApps(true);
-        const res = await fetch('/api/applications');
+        const res = await fetch(`${API_BASE}/api/applications`);
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const data = await res.json();
         if (active) {
@@ -2151,7 +2156,7 @@ export default function App() {
         }
       } catch (err) {
         console.error("Failed to fetch applications from SQLite server:", err);
-        if (active) {
+        if (active && expectBackend) {
           setApiError("Unable to connect to database server. Using local storage fallback.");
         }
         // Fallback to local storage if API fails
@@ -2187,7 +2192,7 @@ export default function App() {
     } catch(e) {}
 
     try {
-      const res = await fetch('/api/applications', {
+      const res = await fetch(`${API_BASE}/api/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newApp)
@@ -2211,7 +2216,7 @@ export default function App() {
     } catch(e) {}
 
     try {
-      const res = await fetch(`/api/applications/${updatedApp.id}`, {
+      const res = await fetch(`${API_BASE}/api/applications/${updatedApp.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedApp)
@@ -2237,7 +2242,7 @@ export default function App() {
     } catch(e) {}
 
     try {
-      const res = await fetch(`/api/applications/${id}`, {
+      const res = await fetch(`${API_BASE}/api/applications/${id}`, {
         method: 'DELETE'
       });
       if (!res.ok) throw new Error('API delete error');
@@ -2261,7 +2266,7 @@ export default function App() {
     } catch(e) {}
 
     try {
-      const res = await fetch('/api/applications/import', {
+      const res = await fetch(`${API_BASE}/api/applications/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mergedApps)
