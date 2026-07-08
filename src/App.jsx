@@ -2160,7 +2160,8 @@ export default function App() {
           const res = await fetch(url, {
             headers: {
               'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'x-user-email': userEmail
             }
           });
           if (!res.ok) throw new Error('Supabase read error');
@@ -2196,7 +2197,8 @@ export default function App() {
                 headers: {
                   'apikey': SUPABASE_ANON_KEY,
                   'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                  'Content-Type': 'application/json'
+                  'Content-Type': 'application/json',
+                  'x-user-email': userEmail
                 },
                 body: JSON.stringify(toUpload)
               });
@@ -2282,7 +2284,8 @@ export default function App() {
           headers: {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'x-user-email': userEmail
           },
           body: JSON.stringify({
             ...newApp,
@@ -2322,12 +2325,13 @@ export default function App() {
     // 1. Sync to Supabase if configured
     if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${updatedApp.id}`, {
+        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${updatedApp.id}&user_email=eq.${encodeURIComponent(userEmail)}`, {
           method: 'PATCH',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'x-user-email': userEmail
           },
           body: JSON.stringify({
             ...updatedApp,
@@ -2368,11 +2372,12 @@ export default function App() {
     // 1. Sync to Supabase if configured
     if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${id}`, {
+        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${id}&user_email=eq.${encodeURIComponent(userEmail)}`, {
           method: 'DELETE',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'x-user-email': userEmail
           }
         });
       } catch (err) {
@@ -2421,7 +2426,8 @@ export default function App() {
             'apikey': SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates'
+            'Prefer': 'resolution=merge-duplicates',
+            'x-user-email': userEmail
           },
           body: JSON.stringify(toUpload)
         });
