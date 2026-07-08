@@ -2131,6 +2131,8 @@ function Sidebar({ page, setPage, mobileOpen, setMobileOpen, totalApps }) {
    ============================================================ */
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 export default function App() {
   const [apps, setApps] = useState([]);
@@ -2138,48 +2140,129 @@ export default function App() {
   const [apiError, setApiError] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
+  
+  const [userEmail, setUserEmail] = useState(() => {
+    return localStorage.getItem("job_search_user_email") || "";
+  });
+  const [emailInput, setEmailInput] = useState(userEmail);
 
   useEffect(() => {
     let active = true;
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const expectBackend = isLocalhost || API_BASE !== "";
-
+    
     async function loadData() {
-      try {
-        setLoadingApps(true);
-        const res = await fetch(`${API_BASE}/api/applications`);
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        const data = await res.json();
-        if (active) {
-          setApps(data.map(normalizeApp));
-          setApiError(null);
-        }
-      } catch (err) {
-        console.error("Failed to fetch applications from SQLite server:", err);
-        if (active && expectBackend) {
-          setApiError("Unable to connect to database server. Using local storage fallback.");
-        }
-        // Fallback to local storage if API fails
+      setLoadingApps(true);
+      
+      // 1. Try Supabase Cloud Sync if configured and email is set
+      if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
         try {
-          const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && active) {
-              setApps(parsed.map(normalizeApp));
+          const url = `${SUPABASE_URL}/rest/v1/applications?user_email=eq.${encodeURIComponent(userEmail)}`;
+          const res = await fetch(url, {
+            headers: {
+              'apikey': SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
             }
+          });
+          if (!res.ok) throw new Error('Supabase read error');
+          const data = await res.json();
+          
+          if (active) {
+            const parsedApps = data.map((a) => ({
+              ...a,
+              rounds: typeof a.rounds === 'string' ? JSON.parse(a.rounds) : (a.rounds || []),
+              recruiters: typeof a.recruiters === 'string' ? JSON.parse(a.recruiters) : (a.recruiters || [])
+            })).map(normalizeApp);
+            
+            // Migration: If Supabase has 0 apps for this user, but localStorage has apps, migrate them!
+            const stored = localStorage.getItem(STORAGE_KEY);
+            let localApps = [];
+            if (stored) {
+              try {
+                localApps = JSON.parse(stored);
+              } catch(e) {}
+            }
+            
+            if (parsedApps.length === 0 && localApps.length > 0) {
+              console.log("Migrating local apps to Supabase cloud database...", localApps.length);
+              const toUpload = localApps.map(app => ({
+                ...app,
+                user_email: userEmail,
+                rounds: JSON.stringify(app.rounds || []),
+                recruiters: JSON.stringify(app.recruiters || [])
+              }));
+              
+              const uploadRes = await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
+                method: 'POST',
+                headers: {
+                  'apikey': SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(toUpload)
+              });
+              
+              if (uploadRes.ok) {
+                setApps(localApps.map(normalizeApp));
+                setApiError(null);
+                setLoadingApps(false);
+                return;
+              }
+            }
+            
+            setApps(parsedApps);
+            setApiError(null);
           }
-        } catch (e) {
-          console.error("Local storage fallback error:", e);
+          setLoadingApps(false);
+          return;
+        } catch (err) {
+          console.error("Failed to fetch from Supabase:", err);
+          if (active) {
+            setApiError("Cloud sync database connection error. Using local fallback.");
+          }
         }
+      }
+
+      // 2. Try Local SQLite Server (localhost environment)
+      if (isLocalhost || API_BASE !== "") {
+        try {
+          const res = await fetch(`${API_BASE}/api/applications`);
+          if (!res.ok) throw new Error(`SQLite server HTTP error: ${res.status}`);
+          const data = await res.json();
+          if (active) {
+            setApps(data.map(normalizeApp));
+            setApiError(null);
+          }
+          setLoadingApps(false);
+          return;
+        } catch (err) {
+          console.error("Failed to connect to SQLite server:", err);
+          if (active && (isLocalhost || API_BASE !== "")) {
+            setApiError("Unable to connect to local SQLite database. Using local storage fallback.");
+          }
+        }
+      }
+
+      // 3. Fallback to Local Storage
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && active) {
+            setApps(parsed.map(normalizeApp));
+          }
+        }
+      } catch (e) {
+        console.error("Local storage read error:", e);
       } finally {
         if (active) {
           setLoadingApps(false);
         }
       }
     }
+
     loadData();
     return () => { active = false; };
-  }, []);
+  }, [userEmail]);
 
   async function handleAdd(newApp) {
     // Optimistic UI update
@@ -2191,17 +2274,38 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     } catch(e) {}
 
+    // 1. Sync to Supabase if configured
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...newApp,
+            user_email: userEmail,
+            rounds: JSON.stringify(newApp.rounds || []),
+            recruiters: JSON.stringify(newApp.recruiters || [])
+          })
+        });
+      } catch (err) {
+        console.error("Supabase insert sync failed:", err);
+      }
+      return;
+    }
+
+    // 2. Sync to SQLite server
     try {
-      const res = await fetch(`${API_BASE}/api/applications`, {
+      await fetch(`${API_BASE}/api/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newApp)
       });
-      if (!res.ok) throw new Error('API write error');
-      const saved = await res.json();
-      setApps((prev) => prev.map((a) => (a.id === newApp.id ? normalizeApp(saved) : a)));
     } catch (err) {
-      console.error("Server add sync failed, saved locally:", err);
+      console.error("SQLite insert sync failed:", err);
     }
   }
 
@@ -2215,17 +2319,37 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     } catch(e) {}
 
+    // 1. Sync to Supabase if configured
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${updatedApp.id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ...updatedApp,
+            rounds: JSON.stringify(updatedApp.rounds || []),
+            recruiters: JSON.stringify(updatedApp.recruiters || [])
+          })
+        });
+      } catch (err) {
+        console.error("Supabase update sync failed:", err);
+      }
+      return;
+    }
+
+    // 2. Sync to SQLite server
     try {
-      const res = await fetch(`${API_BASE}/api/applications/${updatedApp.id}`, {
+      await fetch(`${API_BASE}/api/applications/${updatedApp.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedApp)
       });
-      if (!res.ok) throw new Error('API update error');
-      const saved = await res.json();
-      setApps((prev) => prev.map((a) => (a.id === updatedApp.id ? normalizeApp(saved) : a)));
     } catch (err) {
-      console.error("Server update sync failed, saved locally:", err);
+      console.error("SQLite update sync failed:", err);
     }
   }
 
@@ -2241,13 +2365,29 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     } catch(e) {}
 
+    // 1. Sync to Supabase if configured
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${id}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+      } catch (err) {
+        console.error("Supabase delete sync failed:", err);
+      }
+      return;
+    }
+
+    // 2. Sync to SQLite server
     try {
-      const res = await fetch(`${API_BASE}/api/applications/${id}`, {
+      await fetch(`${API_BASE}/api/applications/${id}`, {
         method: 'DELETE'
       });
-      if (!res.ok) throw new Error('API delete error');
     } catch (err) {
-      console.error("Server delete sync failed, reverted UI:", err);
+      console.error("SQLite delete sync failed:", err);
       setApps(originalApps);
     }
   }
@@ -2265,6 +2405,33 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedApps));
     } catch(e) {}
 
+    // 1. Sync to Supabase if configured
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
+      try {
+        const toUpload = mergedApps.map(app => ({
+          ...app,
+          user_email: userEmail,
+          rounds: JSON.stringify(app.rounds || []),
+          recruiters: JSON.stringify(app.recruiters || [])
+        }));
+        
+        await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
+          method: 'POST',
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify(toUpload)
+        });
+      } catch (err) {
+        console.error("Supabase bulk sync failed:", err);
+      }
+      return;
+    }
+
+    // 2. Sync to SQLite server
     try {
       const res = await fetch(`${API_BASE}/api/applications/import`, {
         method: 'POST',
@@ -2283,7 +2450,7 @@ export default function App() {
     return (
       <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 gap-3 text-slate-500 font-semibold text-xs">
         <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
-        <span>Loading SQLite database pipeline...</span>
+        <span>Loading database pipeline...</span>
       </div>
     );
   }
@@ -2318,6 +2485,58 @@ export default function App() {
             </span>
           </div>
         </header>
+
+        {SUPABASE_URL && SUPABASE_ANON_KEY && (
+          <div className="bg-slate-900 text-white px-6 py-2.5 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md z-20">
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${userEmail ? "bg-emerald-400 animate-pulse" : "bg-slate-400"}`} />
+              <span className="font-bold tracking-wide uppercase text-[10px] text-slate-300">
+                {userEmail ? `Cloud Synced (${userEmail})` : "Cloud Sync Offline"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-medium">Email Profile:</span>
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="Enter email to load pipeline..."
+                className="bg-slate-800 hover:bg-slate-700/80 focus:bg-white text-white focus:text-slate-905 placeholder-slate-500 border border-slate-700 rounded px-2.5 py-1 w-[220px] outline-none text-[11px] font-medium transition-colors"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && emailInput.trim()) {
+                    setUserEmail(emailInput.trim());
+                    localStorage.setItem("job_search_user_email", emailInput.trim());
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (emailInput.trim()) {
+                    setUserEmail(emailInput.trim());
+                    localStorage.setItem("job_search_user_email", emailInput.trim());
+                  }
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold px-3 py-1 rounded transition-colors cursor-pointer text-[10px] uppercase tracking-wider"
+              >
+                Sync
+              </button>
+              {userEmail && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserEmail("");
+                    setEmailInput("");
+                    localStorage.removeItem("job_search_user_email");
+                  }}
+                  className="text-slate-400 hover:text-white underline cursor-pointer text-[10px]"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {apiError && (
           <div className="bg-amber-50 border-b border-amber-100 text-amber-850 px-6 py-2 text-[11px] font-bold flex items-center gap-2 shadow-sm">
