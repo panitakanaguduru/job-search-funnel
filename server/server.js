@@ -1,10 +1,12 @@
 import http from 'node:http';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const distPath = path.join(__dirname, '..', 'dist');
 
 // Initialize SQLite database synchronously
 const db = new DatabaseSync(path.join(__dirname, 'database.sqlite'));
@@ -60,6 +62,45 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathSegments = url.pathname.split('/').filter(Boolean); // ["api", "applications"]
+
+  // Serve static assets in production if not an API route
+  if (pathSegments[0] !== 'api') {
+    let filePath = path.join(distPath, url.pathname === '/' ? 'index.html' : url.pathname);
+    
+    fs.stat(filePath, (err, stats) => {
+      if (err || !stats.isFile()) {
+        // Fallback to index.html for SPA client-side routing
+        filePath = path.join(distPath, 'index.html');
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes = {
+        '.html': 'text/html',
+        '.js': 'text/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.webp': 'image/webp'
+      };
+
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+      fs.readFile(filePath, (error, content) => {
+        if (error) {
+          res.writeHead(500);
+          res.end('Error loading asset');
+        } else {
+          res.writeHead(200, { 'Content-Type': contentType });
+          res.end(content, 'utf-8');
+        }
+      });
+    });
+    return;
+  }
 
   if (pathSegments[0] === 'api' && pathSegments[1] === 'applications') {
     
