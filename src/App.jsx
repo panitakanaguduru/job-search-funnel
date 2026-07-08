@@ -1323,11 +1323,26 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
 function DashboardPage({ apps, setPage }) {
   const stats = useMemo(() => {
     const total = apps.length;
-    const reachedOut = total;
-    const responded = apps.filter((a) => {
+    
+    // Count total recruiters reached out to across all applications
+    let reachedOut = 0;
+    apps.forEach((a) => {
+      reachedOut += (a.recruiters || []).length;
+    });
+
+    // Count total recruiters who responded
+    let responded = 0;
+    apps.forEach((a) => {
+      const recs = a.recruiters || [];
+      responded += recs.filter(r => r.contactResponse && r.contactResponse !== "No Response").length;
+    });
+
+    // Count applications that received at least one response
+    const applicationResponded = apps.filter((a) => {
       const recs = a.recruiters || [];
       return recs.some(r => r.contactResponse && r.contactResponse !== "No Response");
     }).length;
+
     const stageCounts = {};
     apps.forEach((a) => {
       const s = computeFunnelStage(a);
@@ -1339,13 +1354,13 @@ function DashboardPage({ apps, setPage }) {
     const ghosted = stageCounts.Ghosted || 0;
     const withdrawn = stageCounts.Withdrawn || 0;
     const active = total - offers - rejected - ghosted - withdrawn;
-    return { total, reachedOut, responded, stageCounts, offers, interviewing, rejected, ghosted, active };
+    return { total, reachedOut, responded, applicationResponded, stageCounts, offers, interviewing, rejected, ghosted, active };
   }, [apps]);
 
   const funnelSteps = [
     { key: "Applied", label: "Applied", value: stats.total },
-    { key: "Reached Out", label: "Reached Out", value: stats.reachedOut },
-    { key: "Responded", label: "Responded", value: stats.responded },
+    { key: "Reached Out", label: "Recruiters Contacted", value: stats.reachedOut },
+    { key: "Responded", label: "Recruiters Responded", value: stats.responded },
     { key: "Screening", label: "Screening", value: stats.stageCounts.Screening || 0 },
     { key: "Interviewing", label: "Interviewing", value: stats.interviewing },
     { key: "Offer", label: "Offer", value: stats.offers },
@@ -1390,7 +1405,7 @@ function DashboardPage({ apps, setPage }) {
       {/* Compact KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Applications" value={stats.total} tone="indigo" />
-        <StatCard label="Response Rate" value={stats.total ? `${Math.round((stats.responded / stats.total) * 100)}%` : "0%"} sub={`${stats.responded} of ${stats.total} responded`} tone="sky" />
+        <StatCard label="Response Rate" value={stats.total ? `${Math.round((stats.applicationResponded / stats.total) * 100)}%` : "0%"} sub={`${stats.applicationResponded} of ${stats.total} applications responded`} tone="sky" />
         <StatCard label="Interview Rate" value={stats.total ? `${Math.round((stats.interviewing / stats.total) * 100)}%` : "0%"} sub={`${stats.interviewing} interviewing`} tone="amber" />
         <StatCard label="Offer Conversion" value={stats.total ? `${Math.round((stats.offers / stats.total) * 100)}%` : "0%"} sub={`${stats.offers} offers secured`} tone="emerald" />
       </div>
