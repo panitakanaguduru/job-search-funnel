@@ -295,6 +295,32 @@ function normalizeApp(raw) {
   return merged;
 }
 
+function sanitizeForSupabase(app, email) {
+  return {
+    id: app.id,
+    companyName: app.companyName || "",
+    emailUsed: app.emailUsed || "",
+    jobTitle: app.jobTitle || "",
+    autoRoleDomain: app.autoRoleDomain || "Unclassified",
+    manualRoleDomainOverride: app.manualRoleDomainOverride || "",
+    appliedDate: app.appliedDate || "",
+    applicationStatus: app.applicationStatus || "Applied",
+    jobLink: app.jobLink || "",
+    source: app.source || "",
+    resumeVersion: app.resumeVersion || "",
+    referralStatus: app.referralStatus || "No Referral",
+    currentStage: app.currentStage || "New",
+    rejectionReason: app.rejectionReason || "",
+    notes: app.notes || "",
+    followUpDate: app.followUpDate || "",
+    priority: app.priority || "Normal",
+    createdAt: app.createdAt || Date.now(),
+    rounds: JSON.stringify(app.rounds || []),
+    recruiters: JSON.stringify(app.recruiters || []),
+    user_email: email
+  };
+}
+
 /* ============================================================
    SMALL UI PRIMITIVES
    ============================================================ */
@@ -2174,7 +2200,6 @@ export default function App() {
               recruiters: typeof a.recruiters === 'string' ? JSON.parse(a.recruiters) : (a.recruiters || [])
             })).map(normalizeApp);
             
-            // Migration: If Supabase has 0 apps for this user, but localStorage has apps, migrate them!
             const stored = localStorage.getItem(STORAGE_KEY);
             let localApps = [];
             if (stored) {
@@ -2182,15 +2207,10 @@ export default function App() {
                 localApps = JSON.parse(stored);
               } catch(e) {}
             }
-            
+
             if (parsedApps.length === 0 && localApps.length > 0) {
               console.log("Migrating local apps to Supabase cloud database...", localApps.length);
-              const toUpload = localApps.map(app => ({
-                ...app,
-                user_email: userEmail,
-                rounds: JSON.stringify(app.rounds || []),
-                recruiters: JSON.stringify(app.recruiters || [])
-              }));
+              const toUpload = localApps.map(app => sanitizeForSupabase(normalizeApp(app), userEmail));
               
               const uploadRes = await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
                 method: 'POST',
@@ -2208,6 +2228,10 @@ export default function App() {
                 setApiError(null);
                 setLoadingApps(false);
                 return;
+              } else {
+                const text = await uploadRes.text();
+                console.error("Migration failed with response:", text);
+                throw new Error("Migration failed: " + text);
               }
             }
             
@@ -2279,7 +2303,7 @@ export default function App() {
     // 1. Sync to Supabase if configured
     if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
           method: 'POST',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -2287,13 +2311,12 @@ export default function App() {
             'Content-Type': 'application/json',
             'x-user-email': userEmail
           },
-          body: JSON.stringify({
-            ...newApp,
-            user_email: userEmail,
-            rounds: JSON.stringify(newApp.rounds || []),
-            recruiters: JSON.stringify(newApp.recruiters || [])
-          })
+          body: JSON.stringify(sanitizeForSupabase(newApp, userEmail))
         });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error('Supabase insert failed: ' + text);
+        }
       } catch (err) {
         console.error("Supabase insert sync failed:", err);
       }
@@ -2325,7 +2348,7 @@ export default function App() {
     // 1. Sync to Supabase if configured
     if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${updatedApp.id}&user_email=eq.${encodeURIComponent(userEmail)}`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/applications?id=eq.${updatedApp.id}&user_email=eq.${encodeURIComponent(userEmail)}`, {
           method: 'PATCH',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -2333,12 +2356,12 @@ export default function App() {
             'Content-Type': 'application/json',
             'x-user-email': userEmail
           },
-          body: JSON.stringify({
-            ...updatedApp,
-            rounds: JSON.stringify(updatedApp.rounds || []),
-            recruiters: JSON.stringify(updatedApp.recruiters || [])
-          })
+          body: JSON.stringify(sanitizeForSupabase(updatedApp, userEmail))
         });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error('Supabase update failed: ' + text);
+        }
       } catch (err) {
         console.error("Supabase update sync failed:", err);
       }
@@ -2413,14 +2436,9 @@ export default function App() {
     // 1. Sync to Supabase if configured
     if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
       try {
-        const toUpload = mergedApps.map(app => ({
-          ...app,
-          user_email: userEmail,
-          rounds: JSON.stringify(app.rounds || []),
-          recruiters: JSON.stringify(app.recruiters || [])
-        }));
+        const toUpload = mergedApps.map(app => sanitizeForSupabase(normalizeApp(app), userEmail));
         
-        await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/applications`, {
           method: 'POST',
           headers: {
             'apikey': SUPABASE_ANON_KEY,
@@ -2431,6 +2449,10 @@ export default function App() {
           },
           body: JSON.stringify(toUpload)
         });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error('Supabase bulk sync failed: ' + text);
+        }
       } catch (err) {
         console.error("Supabase bulk sync failed:", err);
       }
