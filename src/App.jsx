@@ -2131,48 +2131,156 @@ function Sidebar({ page, setPage, mobileOpen, setMobileOpen, totalApps }) {
    ============================================================ */
 
 export default function App() {
-  const [apps, setApps] = useState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed.map(normalizeApp);
-      }
-    } catch (e) {
-      console.error("Local storage read error:", e);
-    }
-    return [];
-  });
-
+  const [apps, setApps] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+  const [apiError, setApiError] = useState(null);
   const [page, setPage] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
-    } catch (e) {
-      console.error("Local storage save error:", e);
+    let active = true;
+    async function loadData() {
+      try {
+        setLoadingApps(true);
+        const res = await fetch('/api/applications');
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const data = await res.json();
+        if (active) {
+          setApps(data.map(normalizeApp));
+          setApiError(null);
+        }
+      } catch (err) {
+        console.error("Failed to fetch applications from SQLite server:", err);
+        if (active) {
+          setApiError("Unable to connect to database server. Using local storage fallback.");
+        }
+        // Fallback to local storage if API fails
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && active) {
+              setApps(parsed.map(normalizeApp));
+            }
+          }
+        } catch (e) {
+          console.error("Local storage fallback error:", e);
+        }
+      } finally {
+        if (active) {
+          setLoadingApps(false);
+        }
+      }
     }
-  }, [apps]);
+    loadData();
+    return () => { active = false; };
+  }, []);
 
-  function handleAdd(newApp) {
+  async function handleAdd(newApp) {
+    // Optimistic UI update
     setApps((prev) => [newApp, ...prev]);
+    
+    // Save to local storage as fallback
+    try {
+      const merged = [newApp, ...apps];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch(e) {}
+
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newApp)
+      });
+      if (!res.ok) throw new Error('API write error');
+      const saved = await res.json();
+      setApps((prev) => prev.map((a) => (a.id === newApp.id ? normalizeApp(saved) : a)));
+    } catch (err) {
+      console.error("Server add sync failed, saved locally:", err);
+    }
   }
 
-  function handleUpdate(updatedApp) {
+  async function handleUpdate(updatedApp) {
+    // Optimistic UI update
     setApps((prev) => prev.map((a) => (a.id === updatedApp.id ? updatedApp : a)));
+
+    // Save to local storage as fallback
+    try {
+      const merged = apps.map((a) => (a.id === updatedApp.id ? updatedApp : a));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch(e) {}
+
+    try {
+      const res = await fetch(`/api/applications/${updatedApp.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedApp)
+      });
+      if (!res.ok) throw new Error('API update error');
+      const saved = await res.json();
+      setApps((prev) => prev.map((a) => (a.id === updatedApp.id ? normalizeApp(saved) : a)));
+    } catch (err) {
+      console.error("Server update sync failed, saved locally:", err);
+    }
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
+    const originalApps = [...apps];
+    
+    // Optimistic UI update
     setApps((prev) => prev.filter((a) => a.id !== id));
+
+    // Save to local storage as fallback
+    try {
+      const merged = apps.filter((a) => a.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch(e) {}
+
+    try {
+      const res = await fetch(`/api/applications/${id}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('API delete error');
+    } catch (err) {
+      console.error("Server delete sync failed, reverted UI:", err);
+      setApps(originalApps);
+    }
   }
 
-  function handleImport(newApps) {
-    setApps((prev) => {
-      const prevMap = new Map(prev.map((a) => [a.id, a]));
-      newApps.forEach((a) => prevMap.set(a.id, a));
-      return Array.from(prevMap.values());
-    });
+  async function handleImport(newApps) {
+    const prevMap = new Map(apps.map((a) => [a.id, a]));
+    newApps.forEach((a) => prevMap.set(a.id, a));
+    const mergedApps = Array.from(prevMap.values());
+    
+    // Optimistic UI update
+    setApps(mergedApps);
+
+    // Save to local storage as fallback
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedApps));
+    } catch(e) {}
+
+    try {
+      const res = await fetch('/api/applications/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mergedApps)
+      });
+      if (!res.ok) throw new Error('API import error');
+      const updated = await res.json();
+      setApps(updated.map(normalizeApp));
+    } catch (err) {
+      console.error("Server import sync failed, saved locally:", err);
+    }
+  }
+
+  if (loadingApps) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-50 gap-3 text-slate-500 font-semibold text-xs">
+        <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
+        <span>Loading SQLite database pipeline...</span>
+      </div>
+    );
   }
 
   return (
@@ -2205,6 +2313,13 @@ export default function App() {
             </span>
           </div>
         </header>
+
+        {apiError && (
+          <div className="bg-amber-50 border-b border-amber-100 text-amber-850 px-6 py-2 text-[11px] font-bold flex items-center gap-2 shadow-sm">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>{apiError}</span>
+          </div>
+        )}
 
         {/* Main View Area */}
         <main className="flex-1 p-6 md:p-8 max-w-6xl w-full mx-auto">
