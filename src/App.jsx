@@ -1115,7 +1115,11 @@ function ApplicationsPage({ apps, onAdd, onUpdate, onDelete }) {
         const matchesReferral = !referralFilter || a.referralStatus === referralFilter;
         return matchesSearch && matchesDomain && matchesStage && matchesResponse && matchesReferral;
       })
-      .sort((a, b) => (b.appliedDate || "").localeCompare(a.appliedDate || ""));
+      .sort((a, b) => {
+        const dateCompare = (b.appliedDate || "").localeCompare(a.appliedDate || "");
+        if (dateCompare !== 0) return dateCompare;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
   }, [apps, search, domainFilter, stageFilter, responseFilter, referralFilter]);
 
   function openAdd() { setEditing(blankApp()); setModalOpen(true); }
@@ -2197,7 +2201,7 @@ export default function App() {
       // 1. Try Supabase Cloud Sync if configured and email is set
       if (SUPABASE_URL && SUPABASE_ANON_KEY && userEmail) {
         try {
-          const url = `${SUPABASE_URL}/rest/v1/applications?user_email=eq.${encodeURIComponent(userEmail)}`;
+          const url = `${SUPABASE_URL}/rest/v1/applications?user_email=eq.${encodeURIComponent(userEmail)}&order=createdAt.desc`;
           const res = await fetch(url, {
             headers: {
               'apikey': SUPABASE_ANON_KEY,
